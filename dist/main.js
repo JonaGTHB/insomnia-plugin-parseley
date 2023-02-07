@@ -113,7 +113,7 @@ function getCurrentWorkspace(models) {
   return models.workspace;
 }
 var generateInsomniaId = insomniaIdGenerator();
-async function extractRequestsFromLinesByRequest(linesByRequest, parentId) {
+async function extractRequestsFromLinesByRequest(linesByRequest, parentId, fileName) {
   let url = null;
   let auth = null;
   let body = "";
@@ -140,7 +140,8 @@ async function extractRequestsFromLinesByRequest(linesByRequest, parentId) {
         mimeType: "application/json",
         text: JSON.parse(JSON.stringify(body))
       },
-      name: requestsAsLines.requestName ?? "Unbekannt",
+      name: fileName,
+      description: requestsAsLines.requestName ?? "",
       method: requestsAsLines.requestMethod,
       url,
       parentId
@@ -185,16 +186,17 @@ async function handleServiceImport(files, models, context, service) {
   };
   const allChildren = [serviceGroup];
   for (const file of files) {
+    const fileName = file.name.replace(".http", "");
     let requestGroup = {
       parentId: serviceGroup._id,
-      name: file.name.replace(".http", ""),
+      name: fileName,
       _type: "request_group",
       _id: generateInsomniaId()
     };
     const fileHandle = await file.handle.getFile();
     const fileLines = await parseFileTextIntoLines(await fileHandle.text());
     const requests = await partitionFileLinesByRequestAndExtractBasicData(fileLines);
-    const insomniaRequests = await extractRequestsFromLinesByRequest(requests, requestGroup._id);
+    const insomniaRequests = await extractRequestsFromLinesByRequest(requests, requestGroup._id, fileName);
     let all = [requestGroup, ...insomniaRequests];
     allChildren.push(...all);
   }
@@ -217,7 +219,7 @@ async function importRequestFromFile(file, models, context, service) {
     _type: "request_group",
     _id: generateInsomniaId()
   };
-  const insomniaRequests = await extractRequestsFromLinesByRequest(requests, requestGroup._id);
+  const insomniaRequests = await extractRequestsFromLinesByRequest(requests, requestGroup._id, file.name);
   let all = [requestGroup, ...insomniaRequests];
   let resources = [...all, workspace];
   let insomniaExportLike = {

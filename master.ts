@@ -119,7 +119,7 @@ function getCurrentWorkspace(models: WorkspaceActionModels) {
 
 let generateInsomniaId = insomniaIdGenerator();
 
-async function extractRequestsFromLinesByRequest(linesByRequest: Array<LinesByRequestWithNameAndMethod>, parentId: string) {
+async function extractRequestsFromLinesByRequest(linesByRequest: Array<LinesByRequestWithNameAndMethod>, parentId: string, fileName: string) {
     let url = null;
     let auth: null | Awaited<ReturnType<typeof extractAuthorizationFromLine>> = null;
     let body = "";
@@ -146,7 +146,8 @@ async function extractRequestsFromLinesByRequest(linesByRequest: Array<LinesByRe
                 mimeType: "application/json",
                 text: JSON.parse(JSON.stringify(body)),
             },
-            name: requestsAsLines.requestName ?? "Unbekannt",
+            name: fileName,
+            description: requestsAsLines.requestName ?? "",
             method: requestsAsLines.requestMethod,
             url: url,
             parentId: parentId,
@@ -194,16 +195,17 @@ async function handleServiceImport(files: Array<any>, models: WorkspaceActionMod
     const allChildren: Partial<RequestGroup & { _type: "request_group" } | Request & { _type: "request" }>[] = [serviceGroup];
 
     for (const file of files) {
+        const fileName = file.name.replace(".http", "");
         let requestGroup: Partial<RequestGroup & { _type: "request_group" }> = {
             parentId: serviceGroup._id,
-            name: file.name.replace(".http", ""),
+            name: fileName,
             _type: "request_group",
             _id: generateInsomniaId(),
         };
         const fileHandle = await file.handle.getFile();
         const fileLines = await parseFileTextIntoLines(await fileHandle.text());
         const requests: Array<LinesByRequestWithNameAndMethod> = await partitionFileLinesByRequestAndExtractBasicData(fileLines);
-        const insomniaRequests = await extractRequestsFromLinesByRequest(requests, requestGroup._id);
+        const insomniaRequests = await extractRequestsFromLinesByRequest(requests, requestGroup._id, fileName);
         let all = [requestGroup, ...insomniaRequests];
         allChildren.push(...all);
     }
@@ -230,7 +232,7 @@ async function importRequestFromFile(file: File, models: WorkspaceActionModels, 
         _id: generateInsomniaId(),
     };
 
-    const insomniaRequests = await extractRequestsFromLinesByRequest(requests, requestGroup._id);
+    const insomniaRequests = await extractRequestsFromLinesByRequest(requests, requestGroup._id, file.name);
     let all = [requestGroup, ...insomniaRequests];
     let resources = [...all, workspace];
 
