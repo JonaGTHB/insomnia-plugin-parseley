@@ -363,8 +363,4 @@ export const workspaceActions: Array<WorkspaceAction> = [
         label: prefix + "Import Multi, Group by Service",
         action: importFilesRecursivelyAsServices,
     },
-    {
-        label: "Debug",
-        action: debug,
-    }
 ];

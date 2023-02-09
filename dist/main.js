@@ -123,7 +123,7 @@ function insomniaIdGenerator() {
   let index = 0;
   return function generateInsomniaId2() {
     index += 1;
-    return `INSOMNIA${index}`;
+    return `__INSOMNIA_${index}__`;
   };
 }
 function getCurrentWorkspace(models) {
@@ -223,7 +223,6 @@ async function handleServiceImport(files, models, context, service) {
     __export_format: 4,
     _type: InsomniaActionType.EXPORT
   };
-  console.log(insomniaExportLike);
   await context.data.import.raw(JSON.stringify(insomniaExportLike), { workspaceId: workspace._id });
 }
 async function importRequestFromFile(file, models, context, service) {
@@ -245,7 +244,6 @@ async function importRequestFromFile(file, models, context, service) {
     __export_format: 4,
     _type: InsomniaActionType.EXPORT
   };
-  console.log(insomniaExportLike);
   await context.data.import.raw(JSON.stringify(insomniaExportLike), { workspaceId: workspace._id });
 }
 var importFile = async function importFile2(context, models) {
@@ -318,21 +316,6 @@ var importFiles = async function importFile5(context, models) {
   }
   await context.app.alert("Import finished successfully");
 };
-var debug = async function importFile6(context, models) {
-  let insomniaExportLike = {
-    __export_format: 4,
-    _type: InsomniaActionType.EXPORT
-  };
-  let data = await context.data.export.insomnia({
-    includePrivate: false,
-    format: "json",
-    workspace: getCurrentWorkspace(models)
-  });
-  const resources = JSON.parse(data).resources;
-  const requests = resources.filter((resource) => resource._type === InsomniaResourceType.REQUEST).forEach((resource) => {
-  });
-  console.log(resources);
-};
 var prefix = "PL: ";
 var workspaceActions = [
   {
@@ -350,10 +333,6 @@ var workspaceActions = [
   {
     label: prefix + "Import Multi, Group by Service",
     action: importFilesRecursivelyAsServices
-  },
-  {
-    label: "Debug",
-    action: debug
   }
 ];
 // Annotate the CommonJS export names for ESM import in node:
