@@ -6,6 +6,23 @@ type LinesByRequestWithNameAndMethod = {
     requestMethod: string | null,
 }
 
+const services = new Map();
+
+enum AuthorizationType {
+    BASIC = "Basic",
+    BASIC_USERNAME_PASSWORD = "BasicUP",
+    BEARER = "Bearer",
+}
+
+enum InsomniaResourceType {
+    REQUEST = "request",
+    REQUEST_GROUP = "request_group",
+}
+
+enum InsomniaActionType {
+    EXPORT = "export",
+}
+
 async function parseFileTextIntoLines(fileContent: string): Promise<Array<string>> {
     return fileContent.split(/\r?\n/).filter(line => {
         line = line.trim();
@@ -13,7 +30,7 @@ async function parseFileTextIntoLines(fileContent: string): Promise<Array<string
     });
 }
 
-async function isRequestStart(line: string): Promise<string | null> {
+async function getRequestMethodByLine(line: string): Promise<string | null> {
     const requestMethods = ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"];
     for (const requestMethod of requestMethods) {
         if (line.startsWith(requestMethod)) {
@@ -26,17 +43,21 @@ async function isRequestStart(line: string): Promise<string | null> {
 async function partitionFileLinesByRequestAndExtractBasicData(lines: Array<string>): Promise<Array<LinesByRequestWithNameAndMethod>> {
     let isParsingRequest = false;
     let requestLines = [];
-    const requests: Array<LinesByRequestWithNameAndMethod> = [];
+    const requestLinesWithExtraData: Array<LinesByRequestWithNameAndMethod> = [];
     let requestMethod = null;
     let requestName = null;
     for (let i = 0; i < lines.length; i++) {
         let line = lines[i];
-        const isRequestStartLine = await isRequestStart(line);
+        const isRequestStartLine = await getRequestMethodByLine(line);
         if (isRequestStartLine !== null) {
             line = line.replace(isRequestStartLine, "").trim();
             if (isParsingRequest) {
                 requestLines = requestLines.filter(line => !line.trim().startsWith('###'));
-                requests.push({requestMethod: requestMethod, requestName: requestName, requestLines: requestLines});
+                requestLinesWithExtraData.push({
+                    requestMethod: requestMethod,
+                    requestName: requestName,
+                    requestLines: requestLines
+                });
                 requestLines = [];
             }
             requestName = await extractNameFromComment(lines, i);
@@ -48,10 +69,14 @@ async function partitionFileLinesByRequestAndExtractBasicData(lines: Array<strin
         }
         if (i === lines.length - 1) {
             requestLines = requestLines.filter(line => !line.trim().startsWith('###'));
-            requests.push({requestMethod: requestMethod, requestName: requestName, requestLines: requestLines});
+            requestLinesWithExtraData.push({
+                requestMethod: requestMethod,
+                requestName: requestName,
+                requestLines: requestLines
+            });
         }
     }
-    return requests;
+    return requestLinesWithExtraData;
 }
 
 async function extractNameFromComment(lines: Array<string>, index: number): Promise<string | null> {
@@ -66,14 +91,6 @@ async function extractNameFromComment(lines: Array<string>, index: number): Prom
         }
     }
     return null;
-}
-
-const services = new Map();
-
-enum AuthorizationType {
-    BASIC = "Basic",
-    BASIC_USERNAME_PASSWORD = "BasicUP",
-    BEARER = "Bearer",
 }
 
 async function extractAuthorizationFromLine(line: string) {
@@ -123,7 +140,7 @@ async function extractRequestsFromLinesByRequest(linesByRequest: Array<LinesByRe
     let url = null;
     let auth: null | Awaited<ReturnType<typeof extractAuthorizationFromLine>> = null;
     let body = "";
-    const requests: Array<Partial<Request> & { _type: "request" }> = [];
+    const requests: Array<Partial<Request> & { _type: InsomniaResourceType.REQUEST }> = [];
     for (const requestsAsLines of linesByRequest) {
         body = "";
         for (let i = 0; i < requestsAsLines.requestLines.length; i++) {
@@ -139,9 +156,9 @@ async function extractRequestsFromLinesByRequest(linesByRequest: Array<LinesByRe
                 }
             }
         }
-        let request: Partial<Request> & { _type: "request" } = {
+        let request: Partial<Request> & { _type: InsomniaResourceType.REQUEST } = {
             _id: generateInsomniaId(),
-            _type: "request",
+            _type: InsomniaResourceType.REQUEST,
             body: {
                 mimeType: "application/json",
                 text: JSON.parse(JSON.stringify(body)),
@@ -149,7 +166,7 @@ async function extractRequestsFromLinesByRequest(linesByRequest: Array<LinesByRe
             name: fileName,
             description: requestsAsLines.requestName ?? "",
             method: requestsAsLines.requestMethod,
-            url: url,
+            url: url ?? "",
             parentId: parentId,
         }
         if (auth !== null) {
@@ -186,26 +203,26 @@ async function correctTemplateMarker(line: string) {
 
 async function handleServiceImport(files: Array<any>, models: WorkspaceActionModels, context: Context, service: string) {
     const workspace = getCurrentWorkspace(models);
-    let serviceGroup: Partial<RequestGroup & { _type: "request_group" }> = {
+    let serviceGroup: Partial<RequestGroup & { _type: InsomniaResourceType.REQUEST_GROUP }> = {
         parentId: workspace._id,
         name: service,
-        _type: "request_group",
+        _type: InsomniaResourceType.REQUEST_GROUP,
         _id: generateInsomniaId(),
     };
-    const allChildren: Partial<RequestGroup & { _type: "request_group" } | Request & { _type: "request" }>[] = [serviceGroup];
+    const allChildren: Partial<RequestGroup & { _type: InsomniaResourceType.REQUEST_GROUP } | Request & { _type: InsomniaResourceType.REQUEST }>[] = [serviceGroup];
 
     for (const file of files) {
         const fileName = file.name.replace(".http", "");
-        let requestGroup: Partial<RequestGroup & { _type: "request_group" }> = {
+        let requestGroup: Partial<RequestGroup & { _type: InsomniaResourceType.REQUEST_GROUP }> = {
             parentId: serviceGroup._id,
             name: fileName,
-            _type: "request_group",
+            _type: InsomniaResourceType.REQUEST_GROUP,
             _id: generateInsomniaId(),
         };
         const fileHandle = await file.handle.getFile();
         const fileLines = await parseFileTextIntoLines(await fileHandle.text());
-        const requests: Array<LinesByRequestWithNameAndMethod> = await partitionFileLinesByRequestAndExtractBasicData(fileLines);
-        const insomniaRequests = await extractRequestsFromLinesByRequest(requests, requestGroup._id, fileName);
+        const LinesByRequestsWithExtraData: Array<LinesByRequestWithNameAndMethod> = await partitionFileLinesByRequestAndExtractBasicData(fileLines);
+        const insomniaRequests = await extractRequestsFromLinesByRequest(LinesByRequestsWithExtraData, requestGroup._id, fileName);
         let all = [requestGroup, ...insomniaRequests];
         allChildren.push(...all);
     }
@@ -213,7 +230,7 @@ async function handleServiceImport(files: Array<any>, models: WorkspaceActionMod
     let insomniaExportLike = {
         resources,
         __export_format: 4,
-        _type: "export",
+        _type: InsomniaActionType.EXPORT,
     };
     await context.data.import.raw(JSON.stringify(insomniaExportLike), {workspaceId: workspace._id});
 }
@@ -225,10 +242,10 @@ async function importRequestFromFile(file: File, models: WorkspaceActionModels, 
     const requests: Array<LinesByRequestWithNameAndMethod> = await partitionFileLinesByRequestAndExtractBasicData(fileLines);
 
     const workspace = getCurrentWorkspace(models);
-    let requestGroup: Partial<RequestGroup & { _type: "request_group" }> = {
+    let requestGroup: Partial<RequestGroup & { _type: InsomniaResourceType.REQUEST_GROUP }> = {
         parentId: workspace._id,
         name: file.name.replace(".http", ""),
-        _type: "request_group",
+        _type: InsomniaResourceType.REQUEST_GROUP,
         _id: generateInsomniaId(),
     };
 
@@ -239,7 +256,7 @@ async function importRequestFromFile(file: File, models: WorkspaceActionModels, 
     let insomniaExportLike = {
         resources,
         __export_format: 4,
-        _type: "export",
+        _type: InsomniaActionType.EXPORT,
     };
     await context.data.import.raw(JSON.stringify(insomniaExportLike), {workspaceId: workspace._id});
 }
@@ -307,7 +324,6 @@ let importFilesRecursivelyAsServices: WorkspaceAction["action"] =
         // @ts-ignore next-line
         const directoryHandle = await window.showDirectoryPicker()
         let files = await listAllFilesAndAssociateToService(directoryHandle);
-        // files = files.filter(file => file.service === "web");
         services.forEach(async (value, key) => {
             const filesForService = files.filter(file => file.service === key);
             await handleServiceImport(filesForService, models, context, key);
@@ -346,5 +362,9 @@ export const workspaceActions: Array<WorkspaceAction> = [
     {
         label: prefix + "Import Multi, Group by Service",
         action: importFilesRecursivelyAsServices,
+    },
+    {
+        label: "Debug",
+        action: debug,
     }
 ];

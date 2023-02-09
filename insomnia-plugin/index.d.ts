@@ -197,6 +197,7 @@ declare module "insomnia-plugin" {
       insomnia(options?: {
         includePrivate?: boolean;
         format?: "json" | "yaml";
+        workspace?: Workspace,
       }): Promise<string>;
       har(options?: { includePrivate?: boolean }): Promise<string>;
     };
